@@ -2,6 +2,7 @@ const Order = require('../models/Order');
 const MenuItem = require('../models/MenuItem');
 const { transitionOrder } = require('../patterns/state/OrderStateMachine');
 const { InvalidOrderTransitionError } = require('../patterns/state/OrderState');
+const { visibilityStrategyFor, sortStrategyFor } = require('../patterns/strategy/OrderQueryStrategy');
 
 // POST /api/orders : create new order (staff)
 const createOrder = async (req, res) => {
@@ -42,15 +43,18 @@ const createOrder = async (req, res) => {
     }
 };
 
-// GET /api/orders : get orders (staff sees own(?), kitchen+admin see all)
+// GET /api/orders : get orders.
+// Visibility (which orders) and sort order are chosen by interchangeable
+// strategies — see patterns/strategy. Visibility is driven by role; sort is
+// switchable per request via ?sort=newest|oldest|status (default newest).
 const getOrders = async (req, res) => {
     try {
-        const filter = req.user.role === 'staff'
-            ? { createdBy: req.user._id }
-            : {};
-        const orders = await Order.find(filter)
+        const visibility = visibilityStrategyFor(req.user.role);
+        const sort = sortStrategyFor(req.query.sort);
+
+        const orders = await Order.find(visibility.filter(req.user))
             .populate('createdBy', 'name')
-            .sort({ createdAt: -1 });
+            .sort(sort.sort());
         res.json(orders);
     } catch (error) {
         res.status(500).json({ message: error.message });
