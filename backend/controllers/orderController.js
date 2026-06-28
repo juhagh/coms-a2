@@ -3,14 +3,22 @@ const MenuItem = require('../models/MenuItem');
 const { transitionOrder } = require('../patterns/state/OrderStateMachine');
 const { InvalidOrderTransitionError } = require('../patterns/state/OrderState');
 const { visibilityStrategyFor, sortStrategyFor } = require('../patterns/strategy/OrderQueryStrategy');
+const { validateOrderRequest, OrderValidationError } = require('../patterns/chain/ValidationHandler');
 
 // POST /api/orders : create new order (staff)
 const createOrder = async (req, res) => {
     try {
         const { items, notes } = req.body;
 
-        if (!Array.isArray(items) || items.length === 0) {
-            return res.status(400).json({ message: 'An order must contain at least one item' });
+        // Validation runs through an explicit Chain of Responsibility
+        // (patterns/chain): items present -> well-formed -> valid quantity.
+        try {
+            validateOrderRequest({ items });
+        } catch (err) {
+            if (err instanceof OrderValidationError) {
+                return res.status(400).json({ message: err.message });
+            }
+            throw err;
         }
 
         // Fetch each menu item to snapshot name+price
