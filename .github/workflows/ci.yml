@@ -1,0 +1,133 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  # ─── CI: Test and Build ───────────────────────────────────────
+  ci:
+    name: CI — Install & Build
+    runs-on: ubuntu-latest
+
+    services:
+      mongodb:
+        image: mongo:7
+        ports:
+          - 27017:27017
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+
+      - name: Install backend dependencies
+        run: |
+          cd backend
+          npm ci
+
+      - name: Run backend tests
+        env:
+          MONGO_URI: mongodb://localhost:27017/cafe-test
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          NODE_ENV: test
+        run: |
+          cd backend
+          npm test
+
+      - name: Install frontend dependencies
+        run: |
+          cd frontend
+          npm ci
+
+      - name: Build frontend
+        env:
+          REACT_APP_API_URL: ${{ secrets.REACT_APP_API_URL }}
+        run: |
+          cd frontend
+          npm run build
+
+  # ─── CD: Deploy to EC2 ───────────────────────────────────────
+  cd:
+    name: CD — Deploy to EC2
+    runs-on: ubuntu-latest
+    needs: ci
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Build frontend for production
+        env:
+          REACT_APP_API_URL: ${{ secrets.REACT_APP_API_URL }}
+        run: |
+          cd frontend
+          npm ci
+          npm run build
+
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_KEY }}
+          script: |
+            cd ~/CafeOrderManagementSystem_IFQ636
+            
+            # Pull latest code
+            git pull origin main
+            
+            # Install backend dependencies
+            cd backend
+            npm ci --production
+            
+            # Restart backend
+            pm2 restart cafe-backend || pm2 start server.js --name cafe-backend
+            pm2 save
+            
+            cd ..
+
+      - name: Clear frontend build directory on EC2
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_KEY }}
+          script: |
+            rm -rf ~/CafeOrderManagementSystem_IFQ636/frontend/build/*
+
+      - name: Copy frontend build to EC2
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_KEY }}
+          source: "frontend/build/*"
+          target: "~/CafeOrderManagementSystem_IFQ636/frontend/build"
+          strip_components: 2
+
+      - name: Fix permissions and restart Nginx
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_KEY }}
+          script: |
+            chmod -R 755 ~/CafeOrderManagementSystem_IFQ636/frontend/build
+            sudo systemctl restart nginx
