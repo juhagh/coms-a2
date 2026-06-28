@@ -95,8 +95,11 @@ jobs:
           script: |
             cd ~/CafeOrderManagementSystem_IFQ636
             
-            # Pull latest code
-            git pull origin main
+            # Sync working tree exactly to the latest main.
+            # fetch + reset (not pull) so deploys are robust even if history
+            # diverges; .env and node_modules are gitignored and untouched.
+            git fetch origin main
+            git reset --hard origin/main
             
             # Install backend dependencies
             cd backend
