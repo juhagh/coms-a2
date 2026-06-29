@@ -35,7 +35,7 @@ http://15.135.58.70
 
 - **Frontend:** React, React Router, Axios
 - **Backend:** Node.js, Express, JWT, bcrypt, Mongoose
-- **Database:** MongoDB Atlas (M0 free tier)
+- **Database:** MongoDB 7, bound to localhost:27017
 - **Infrastructure:** AWS EC2, Nginx, PM2
 - **CI/CD:** GitHub Actions
 
