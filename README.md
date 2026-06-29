@@ -35,7 +35,7 @@ http://15.135.58.70
 
 - **Frontend:** React, React Router, Axios
 - **Backend:** Node.js, Express, JWT, bcrypt, Mongoose
-- **Database:** Self-hosted MongoDB 7 (Docker on EC2)
+- **Database:** Self-hosted MongoDB 7 (Docker on EC2, bound to 127.0.0.1:27017)
 - **Infrastructure:** AWS EC2, Nginx, PM2
 - **CI/CD:** GitHub Actions
 
