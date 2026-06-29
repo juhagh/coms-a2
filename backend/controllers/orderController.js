@@ -1,53 +1,26 @@
 const Order = require('../models/Order');
-const MenuItem = require('../models/MenuItem');
-const { transitionOrder } = require('../patterns/state/OrderStateMachine');
 const { InvalidOrderTransitionError } = require('../patterns/state/OrderState');
 const { visibilityStrategyFor, sortStrategyFor } = require('../patterns/strategy/OrderQueryStrategy');
-const { validateOrderRequest, OrderValidationError } = require('../patterns/chain/ValidationHandler');
-const { orderStatusSubject } = require('../patterns/observer/OrderEvents');
+const { OrderValidationError } = require('../patterns/chain/ValidationHandler');
+const { orderService } = require('../patterns/facade/OrderService');
 
 // POST /api/orders : create new order (staff)
+// Orchestration (validate -> price -> persist) is delegated to the
+// OrderService facade (patterns/facade).
 const createOrder = async (req, res) => {
     try {
         const { items, notes } = req.body;
 
-        // Validation runs through an explicit Chain of Responsibility
-        // (patterns/chain): items present -> well-formed -> valid quantity.
-        try {
-            validateOrderRequest({ items });
-        } catch (err) {
-            if (err instanceof OrderValidationError) {
-                return res.status(400).json({ message: err.message });
-            }
-            throw err;
-        }
-
-        // Fetch each menu item to snapshot name+price
-        const orderItems = await Promise.all(items.map(async (item) => {
-            const menuItem = await MenuItem.findById(item.menuItemId);
-            if (!menuItem) throw new Error(`Menu item ${item.menuItemId} not found`);
-            if (!menuItem.available) throw new Error(`${menuItem.name} is not available`);
-            return {
-                menuItem: menuItem._id,
-                name: menuItem.name,
-                price: menuItem.price,
-                quantity: item.quantity,
-                image: menuItem.image || '',
-            };
-        }));
-
-        const totalPrice = orderItems.reduce((sum, i) => sum + i.price * i.quantity, 0);
-
-        const order = await Order.create({
-            createdBy: req.user._id,
-            items: orderItems,
+        const order = await orderService.placeOrder({
+            userId: req.user._id,
+            items,
             notes,
-            totalPrice,
-            status: 'queued',
         });
 
         res.status(201).json(order);
     } catch (error) {
+        // OrderValidationError (bad request shape) and menu errors are both
+        // client errors -> 400, preserving prior behaviour.
         res.status(400).json({ message: error.message });
     }
 };
@@ -82,37 +55,24 @@ const getOrder = async (req, res) => {
     }
 };
 
-// PUT /api/orders/:id/status : update order status
-// Transition validation is delegated to the State pattern (patterns/state).
+// PUT /api/orders/:id/status : update order status.
+// The OrderService facade applies the State transition, persists, and publishes
+// the Observer event; this handler only maps outcomes to HTTP responses.
 const updateOrderStatus = async (req, res) => {
     try {
         const { status } = req.body;
 
-        const order = await Order.findById(req.params.id);
-        if (!order) return res.status(404).json({ message: 'Order not found' });
-
-        const from = order.status;
-
+        let updated;
         try {
-            // Asks the current state object whether this move is legal.
-            transitionOrder(order, status);
+            updated = await orderService.changeStatus(req.params.id, status);
         } catch (err) {
             if (err instanceof InvalidOrderTransitionError) {
                 return res.status(400).json({ message: err.message });
             }
-            throw err; // unknown status / unexpected -> 500 below
+            throw err;
         }
 
-        const updated = await order.save();
-
-        // Observer: announce the change; subscribers (audit, kitchen, customer)
-        // react without the controller knowing who is listening.
-        orderStatusSubject.notifyStatusChanged({
-            orderId: updated._id.toString(),
-            from,
-            to: updated.status,
-        });
-
+        if (!updated) return res.status(404).json({ message: 'Order not found' });
         res.json(updated);
     } catch (error) {
         res.status(500).json({ message: error.message });
