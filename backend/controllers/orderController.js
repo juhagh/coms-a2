@@ -4,6 +4,7 @@ const { transitionOrder } = require('../patterns/state/OrderStateMachine');
 const { InvalidOrderTransitionError } = require('../patterns/state/OrderState');
 const { visibilityStrategyFor, sortStrategyFor } = require('../patterns/strategy/OrderQueryStrategy');
 const { validateOrderRequest, OrderValidationError } = require('../patterns/chain/ValidationHandler');
+const { orderStatusSubject } = require('../patterns/observer/OrderEvents');
 
 // POST /api/orders : create new order (staff)
 const createOrder = async (req, res) => {
@@ -90,6 +91,8 @@ const updateOrderStatus = async (req, res) => {
         const order = await Order.findById(req.params.id);
         if (!order) return res.status(404).json({ message: 'Order not found' });
 
+        const from = order.status;
+
         try {
             // Asks the current state object whether this move is legal.
             transitionOrder(order, status);
@@ -101,6 +104,15 @@ const updateOrderStatus = async (req, res) => {
         }
 
         const updated = await order.save();
+
+        // Observer: announce the change; subscribers (audit, kitchen, customer)
+        // react without the controller knowing who is listening.
+        orderStatusSubject.notifyStatusChanged({
+            orderId: updated._id.toString(),
+            from,
+            to: updated.status,
+        });
+
         res.json(updated);
     } catch (error) {
         res.status(500).json({ message: error.message });
