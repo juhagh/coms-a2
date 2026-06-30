@@ -68,11 +68,12 @@ const updateUserProfile = async (req, res) => {
         const user = await User.findById(req.user.id);
         if (!user) return res.status(404).json({ message: 'User not found' });
 
-        const { name, email, university, address } = req.body;
+        const { name, email, university, address, password } = req.body;
         user.name = name || user.name;
         user.email = email || user.email;
         user.university = university || user.university;
         user.address = address || user.address;
+        if (password) user.password = password; // pre-save hook re-hashes it
 
         const updatedUser = await user.save();
         res.json({ id: updatedUser.id, name: updatedUser.name, email: updatedUser.email, university: updatedUser.university, address: updatedUser.address, token: generateToken(updatedUser.id, updatedUser.role) });
@@ -81,4 +82,56 @@ const updateUserProfile = async (req, res) => {
     }
 };
 
-module.exports = { registerUser, loginUser, updateUserProfile, getProfile };
+// GET /api/auth/users : list all users (admin only)
+const getUsers = async (req, res) => {
+    try {
+        const users = await User.find().select('-password');
+        res.json(users);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+// PUT /api/auth/users/:id/role : change a user's role (admin only)
+const ALLOWED_ROLES = ['staff', 'kitchen', 'admin'];
+
+// Pure guard: returns an error message, or null if the change is allowed.
+const validateRoleChange = (role, targetUserId, requesterId) => {
+    if (!ALLOWED_ROLES.includes(role)) {
+        return `Role must be one of: ${ALLOWED_ROLES.join(', ')}`;
+    }
+    if (targetUserId === requesterId) {
+        return 'You cannot change your own role'; // avoid self-lockout
+    }
+    return null;
+};
+
+const updateUserRole = async (req, res) => {
+    try {
+        const problem = validateRoleChange(req.body.role, req.params.id, req.user.id);
+        if (problem) return res.status(400).json({ message: problem });
+
+        const user = await User.findById(req.params.id);
+        if (!user) return res.status(404).json({ message: 'User not found' });
+
+        user.role = req.body.role;
+        const updated = await user.save();
+
+        // Factory resolves the permission set for the new role.
+        const domainUser = UserFactory.create(updated.role, {
+            id: updated.id, name: updated.name, email: updated.email,
+        });
+
+        res.json({
+            id: updated.id,
+            name: updated.name,
+            email: updated.email,
+            role: updated.role,
+            permissions: domainUser.permissions(),
+        });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+module.exports = { registerUser, loginUser, updateUserProfile, getProfile, getUsers, updateUserRole, validateRoleChange };
