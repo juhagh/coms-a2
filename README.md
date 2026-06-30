@@ -19,7 +19,7 @@ http://15.135.58.70
 ## Project Links
 
 - **GitHub:** https://github.com/juhagh/coms-a2
-- **Issues & Project board:** https://github.com/juhagh/coms-a2/issues
+- **Issues & Project board:** https://github.com/users/juhagh/projects/1/views/2
 - **Figma Design:** https://www.figma.com/design/tZClfoxjHp6f8yK2r9ytq7/Cafe-Order-Management-System---Designs?node-id=9628-563&t=Lo3nBN9a1f7rRXdD-1
 - **SysML Diagrams:** https://github.com/juhagh/coms-a2/blob/main/docs/sysml/CafeOrderManagementSystem-sysml.drawio
 - **Postman Collection:** https://github.com/juhagh/coms-a2/tree/main/postman
