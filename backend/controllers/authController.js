@@ -5,7 +5,7 @@ const bcrypt = require('bcrypt');
 const { UserFactory } = require('../patterns/factory/UserFactory');
 
 const generateToken = (id, role) => {
-    return jwt.sign({ id, role }, process.env.JWT_SECRET, { expiresIn: '90d' });
+    return jwt.sign({ id, role }, process.env.JWT_SECRET, { expiresIn: '7d' });
 };
 
 const registerUser = async (req, res) => {
